@@ -1,0 +1,8 @@
+node_modules/
+.hallmark/
+.DS_Store
+*.tgz
+*.zip
+.env
+.env.*
+coverage/
