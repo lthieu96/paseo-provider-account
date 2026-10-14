@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { MutableDaemonConfigSchema } from "@getpaseo/protocol/messages";
 import {
   createUsageHandler,
+  jwtEmail,
   normalizeClaudeUsage,
   normalizeCodexUsage,
 } from "./usage.ts";
@@ -155,4 +156,12 @@ test("usage failures never expose credential errors and concurrent requests shar
   assert.equal(calls, 1);
   assert.equal(results[0].reports[0].status, "error");
   assert.equal(JSON.stringify(results).includes("secret-never-return"), false);
+});
+
+test("Codex email comes from the id_token claims", () => {
+  const jwt = (claims: object) => `x.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.y`;
+  assert.equal(jwtEmail(jwt({ email: "a@b.co" })), "a@b.co");
+  assert.equal(jwtEmail(jwt({ "https://api.openai.com/profile": { email: "c@d.co" } })), "c@d.co");
+  assert.equal(jwtEmail("not-a-jwt"), undefined);
+  assert.equal(jwtEmail(undefined), undefined);
 });

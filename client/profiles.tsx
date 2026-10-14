@@ -2,7 +2,7 @@ import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
 import { useRpc } from "@getpaseo/plugin/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Platform, ScrollView, Text, View } from "react-native";
 import {
   providers,
   listProfilesRpc,
@@ -11,9 +11,19 @@ import {
   type Profile,
 } from "../shared/profiles.ts";
 import { cancelLoginRpc, loginStatusRpc, startLoginRpc, submitLoginCodeRpc, type LoginState } from "../shared/login.ts";
-import { usageRpc } from "../shared/usage.ts";
-import { DraftError, editDraft, newDraft, toSaveInput, type Draft, type DraftField } from "./draft.ts";
-import { FluidButton, FluidDialog, FluidField, fluid, headingLevel } from "./fluid.tsx";
+import { usageRpc, type UsageReport } from "../shared/usage.ts";
+import {
+  DraftError,
+  editDraft,
+  filterProfiles,
+  newDraft,
+  providerLabels,
+  toSaveInput,
+  type Draft,
+  type DraftField,
+  type ProviderGroup,
+} from "./draft.ts";
+import { FluidButton, FluidDialog, FluidField, FluidSegmented, fluid, headingLevel } from "./fluid.tsx";
 import { ProfileForm } from "./profile-form.tsx";
 import { ProfileList } from "./profile-list.tsx";
 
@@ -21,6 +31,13 @@ import { ProfileList } from "./profile-list.tsx";
 const drafts = new Map<string, Draft>();
 
 const ended = (state: LoginState | undefined) => !!state && ["done", "failed", "canceled"].includes(state.step);
+const needsUsageRetry = (data: { reports: UsageReport[] } | undefined) =>
+  data?.reports.some(
+    (report) =>
+      report.status === "error" ||
+      report.message === "Login expired. Sign in again." ||
+      report.message === "Claude Code is signed out. Sign in again.",
+  ) ?? false;
 
 export function ProfilesSurface(props: PluginSurfaceProps) {
   return <ProfilesScreen key={props.host.id} {...props} />;
@@ -38,6 +55,7 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
   const cache = useQueryClient();
   const [draft, setDraft] = useState<Draft | null>(() => drafts.get(host.id) || null);
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<ProviderGroup | "all">("all");
   // `field` ties a validation message to the input it is about; other errors show in the footer.
   const [error, setError] = useState<{ message: string; field?: DraftField } | null>(null);
   const [notice, setNotice] = useState("");
@@ -49,8 +67,8 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
     queryKey: ["profile-usage"],
     queryFn: () => readUsage({ force: false }),
     enabled: !draft,
-    refetchInterval: 300000,
-    staleTime: 300000,
+    refetchInterval: (query) => (needsUsageRetry(query.state.data) ? 30000 : 300000),
+    staleTime: (query) => (needsUsageRetry(query.state.data) ? 30000 : 300000),
     retry: false,
   });
   useEffect(() => {
@@ -133,7 +151,7 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
   }
   // Closing a changed draft asks first; asking again (Escape, backdrop) confirms the discard.
   function requestClose() {
-    if (!draft || confirmDiscard || JSON.stringify(draft) === pristine.current) open(null);
+    if (!draft || confirmDiscard || !dirty) open(null);
     else setConfirmDiscard(true);
   }
   function update(patch: Partial<Draft>) {
@@ -172,10 +190,9 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
   }
 
   const all = profiles.data?.profiles ?? [];
-  const query = search.trim().toLowerCase();
-  const visible = all.filter((profile) =>
-    `${profile.label} ${profile.id} ${profile.provider}`.toLowerCase().includes(query),
-  );
+  const { counts, visible } = filterProfiles(all, search, filter);
+  const narrowed = !!search.trim() || filter !== "all";
+  const dirty = !!draft && JSON.stringify(draft) !== pristine.current;
   const editing = draft?.revision ? all.find((profile) => profile.id === draft.id) : undefined;
   const usageError = refreshUsage.error || usage.error;
   const errorText = error ? (
@@ -193,9 +210,9 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: layout.compact ? 12 : 32, paddingBottom: 48 }}
       >
-        <View style={{ width: "100%", maxWidth: 720, alignSelf: "center", gap: 16, minWidth: 0 }}>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "flex-end", gap: 12, marginBottom: 8 }}>
-            <View style={{ flex: 1, minWidth: 200, gap: 4 }}>
+        <View style={{ width: "100%", maxWidth: 760, alignSelf: "center", gap: 16, minWidth: 0 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 8 }}>
+            <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
               <Text
                 accessibilityRole="header"
                 {...headingLevel(1)}
@@ -203,13 +220,19 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
               >
                 Provider accounts
               </Text>
-              <Text style={muted}>Separate logins and endpoints for each agent on {host.label}.</Text>
+              {layout.compact ? null : (
+                <Text style={muted}>
+                  Separate logins for each agent on {host.label}. Pick one in the model picker when you start an agent.
+                </Text>
+              )}
             </View>
             <View style={{ flexDirection: "row", gap: 8 }}>
               <FluidButton
                 theme={theme}
                 label="Refresh"
-                variant="ghost"
+                icon="RefreshCw"
+                iconOnly
+                variant="tertiary"
                 disabled={profiles.isFetching || refreshUsage.isPending}
                 loading={profiles.isFetching || refreshUsage.isPending}
                 onPress={() => {
@@ -221,6 +244,8 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
               <FluidButton
                 theme={theme}
                 label="New account"
+                icon="Plus"
+                iconOnly={layout.compact}
                 variant="primary"
                 disabled={busy || !profiles.data}
                 onPress={() => open(newDraft())}
@@ -234,16 +259,37 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
           ) : null}
           {draft ? null : errorText}
           {usageError ? <Text style={{ ...t.caption, color: c.statusDanger }}>Usage: {usageError.message}</Text> : null}
-          {all.length > 5 ? (
-            <FluidField
+          <View
+            style={{
+              flexDirection: layout.compact ? "column" : "row",
+              alignItems: layout.compact ? "stretch" : "center",
+              gap: layout.compact ? 8 : 16,
+            }}
+          >
+            <FluidSegmented<ProviderGroup | "all">
               theme={theme}
-              label="Search accounts"
-              hideLabel
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Search by name, ID or agent"
+              label="Show accounts"
+              compact={layout.compact}
+              value={filter}
+              onChange={setFilter}
+              options={(["all", "claude", "codex", "other"] as const).map((value) => ({
+                value,
+                label: value === "all" ? "All" : value === "other" ? "Other" : providerLabels[value],
+                count: layout.compact ? undefined : counts[value],
+              }))}
             />
-          ) : null}
+            <View style={{ flex: layout.compact ? undefined : 1, maxWidth: layout.compact ? undefined : 300, marginLeft: "auto", width: layout.compact ? "100%" : undefined }}>
+              <FluidField
+                theme={theme}
+                label="Search accounts"
+                hideLabel
+                icon="Search"
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Search accounts"
+              />
+            </View>
+          </View>
           {profiles.isPending ? <Text style={muted}>Loading accounts…</Text> : null}
           {profiles.error ? (
             <Text accessibilityRole="alert" style={{ ...t.body, color: c.statusDanger }}>
@@ -263,11 +309,11 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
               }}
             >
               <Text style={{ ...t.subtitle, color: c.foreground }}>
-                {query ? "No matching accounts" : "No accounts yet"}
+                {narrowed ? "No matching accounts" : "No accounts yet"}
               </Text>
               <Text style={{ ...muted, textAlign: "center" }}>
-                {query
-                  ? "Try another name or clear the search."
+                {narrowed
+                  ? "Try another name, clear the search or show all agents."
                   : "Add one to run Claude, Codex or another agent with a separate login or endpoint."}
               </Text>
             </View>
@@ -291,6 +337,11 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
           theme={theme}
           compact={layout.compact}
           title={draft.revision ? `Edit ${draft.label || draft.id}` : "New account"}
+          subtitle={
+            draft.revision
+              ? `${draft.id} · ${providerLabels[draft.provider]}`
+              : "Shows up in the model picker as its own provider."
+          }
           onClose={requestClose}
           footer={
             confirmDiscard ? (
@@ -302,11 +353,22 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
             ) : (
               <>
                 {error ? <View style={{ flexBasis: "100%" }}>{errorText}</View> : null}
+                {dirty ? (
+                  <Text style={{ ...t.body, flexGrow: 1, color: c.statusWarning }}>● Unsaved changes</Text>
+                ) : (
+                  <Text style={{ ...t.caption, flexGrow: 1, color: c.foregroundMuted }}>
+                    {Platform.OS === "web" ? (
+                      <>
+                        <Text style={{ fontFamily: fluid.font.mono }}>Esc</Text> to cancel
+                      </>
+                    ) : null}
+                  </Text>
+                )}
                 <FluidButton theme={theme} label="Cancel" variant="ghost" onPress={requestClose} />
                 <FluidButton
                   theme={theme}
                   label={saveMutation.isPending ? "Saving…" : draft.revision ? "Save" : "Add account"}
-                  variant="primary"
+                  variant="accent"
                   disabled={busy}
                   loading={saveMutation.isPending}
                   onPress={submit}

@@ -1,12 +1,15 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { openExternalUrl } from "@getpaseo/plugin/client";
-import { copyText } from "@getpaseo/plugin/client/react-native";
-import { useState } from "react";
+import { Icon, copyText } from "@getpaseo/plugin/client/react-native";
+import { useState, type ReactNode } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import type { LoginState } from "../shared/login.ts";
-import { FluidButton, FluidField, fluid } from "./fluid.tsx";
+import { FluidButton, FluidField, Tint, fluid } from "./fluid.tsx";
 
-// Progress of an in-app sign-in: the link to open, the Codex device code, or the pasted Claude code.
+const steps = ["Open page", "Approve", "Done"];
+
+// Progress of an in-app sign-in, one card replaced in place: steps on top, then the link to open, the
+// Codex device code, or the pasted Claude code. Done and failed tint the card.
 export function LoginPanel({
   theme,
   compact,
@@ -22,55 +25,128 @@ export function LoginPanel({
   busy: boolean;
   onSubmitCode(code: string): void;
   onCancel(): void;
-  onRetry(): void;
+  onRetry(method: "browser" | "code"): void;
 }) {
   const [code, setCode] = useState("");
   const [useCode, setUseCode] = useState(false);
+  const [opened, setOpened] = useState(false);
   const [note, setNote] = useState("");
   const c = theme.colors;
   const t = fluid.type(compact);
   const text = { ...t.body, color: c.foreground };
   const muted = { ...t.caption, color: c.foregroundMuted };
   const link = login.provider === "claude" && useCode ? login.codeUrl : login.url ?? login.codeUrl;
-  const open = (url: string) => openExternalUrl(url).catch(() => setNote("Couldn't open a browser here. Copy the link instead."));
-  const copy = (value: string, what: string) =>
-    copyText(value).then(
+  const method = login.userCode ? "code" : "browser";
+  const open = (url: string) => {
+    setOpened(true);
+    return openExternalUrl(url).catch(() => setNote("Couldn't open a browser here. Copy the link instead."));
+  };
+  const copy = (value: string, what: string) => {
+    if (what === "Link") setOpened(true);
+    return copyText(value).then(
       () => setNote(`${what} copied.`),
       () => setNote("Copying isn't available here. Select the text below instead."),
     );
+  };
   const row = { flexDirection: "row" as const, flexWrap: "wrap" as const, alignItems: "center" as const, gap: 8 };
-  const box = { gap: 12, padding: 12, borderRadius: fluid.radius.item, backgroundColor: c.surface2 };
+  const card = (children: ReactNode, tint?: string, live = false) => (
+    <View
+      accessibilityLiveRegion={live ? "polite" : undefined}
+      style={{ gap: 12, padding: 16, borderRadius: fluid.radius.container, borderWidth: tint ? 0 : 1, borderColor: c.border }}
+    >
+      {tint ? (
+        <>
+          <Tint color={tint} opacity={0.07} />
+          <Tint color={tint} opacity={0.4} outline />
+        </>
+      ) : null}
+      {children}
+    </View>
+  );
 
   if (login.step === "done")
-    return (
-      <View style={box} accessibilityLiveRegion="polite">
-        <Text style={{ ...text, color: c.statusSuccess }}>
-          ✓ Signed in{login.email ? ` as ${login.email}` : ""}
-          {login.plan ? ` (${login.plan})` : ""}. Save to finish.
-        </Text>
-      </View>
-    );
-  if (login.step === "failed" || login.step === "canceled")
-    return (
-      <View style={box} accessibilityLiveRegion="polite">
-        <Text style={{ ...text, color: login.step === "failed" ? c.statusDanger : c.foregroundMuted }}>
-          {login.step === "failed" ? login.message || "Sign-in did not finish." : "Sign-in canceled."}
-        </Text>
-        <View style={row}>
-          <FluidButton theme={theme} label="Try again" onPress={onRetry} disabled={busy} />
+    return card(
+      <View style={{ ...row, gap: 12 }}>
+        <View style={{ width: 36, height: 36, alignItems: "center", justifyContent: "center" }}>
+          <Tint color={c.statusSuccess} opacity={0.16} radius={18} />
+          <View>
+            <Icon name="Check" size={18} color={c.statusSuccess} />
+          </View>
         </View>
-      </View>
+        <View style={{ flex: 1, minWidth: 160 }}>
+          <Text style={{ ...t.subtitle, color: c.foreground, fontWeight: fluid.semibold }}>
+            {login.email ?? "Signed in"}
+          </Text>
+          <Text style={muted}>{[login.plan, "Signed in. Save to finish."].filter(Boolean).join(" · ")}</Text>
+        </View>
+        <FluidButton theme={theme} label="Sign in again" icon="RotateCcw" variant="ghost" disabled={busy} onPress={() => onRetry(method)} />
+      </View>,
+      c.statusSuccess,
+      true,
     );
+  if (login.step === "failed" || login.step === "canceled") {
+    const failed = login.step === "failed";
+    return card(
+      <>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Icon name={failed ? "CircleAlert" : "CircleSlash"} size={18} color={failed ? c.statusDanger : c.foregroundMuted} />
+          <Text style={{ ...text, flex: 1, color: failed ? c.statusDanger : c.foregroundMuted }}>
+            {failed ? login.message || "Sign-in did not finish." : "Sign-in canceled."}
+          </Text>
+        </View>
+        <View style={row}>
+          <FluidButton theme={theme} label="Try again" icon="RotateCcw" variant="primary" onPress={() => onRetry(method)} disabled={busy} />
+          {method === "code" ? (
+            <FluidButton theme={theme} label="Use the browser" onPress={() => onRetry("browser")} disabled={busy} />
+          ) : null}
+        </View>
+      </>,
+      failed ? c.statusDanger : undefined,
+      true,
+    );
+  }
   if (login.step === "starting" || !link)
-    return (
-      <View style={{ ...box, ...row }}>
-        <ActivityIndicator size="small" color={c.foregroundMuted} />
-        <Text style={muted}>Starting the official sign-in…</Text>
+    return card(
+      <>
+        <View style={row}>
+          <ActivityIndicator size="small" color={c.foregroundMuted} />
+          <Text style={muted}>Starting the official sign-in…</Text>
+        </View>
         <FluidButton theme={theme} label="Cancel" variant="ghost" onPress={onCancel} />
-      </View>
+      </>,
     );
-  return (
-    <View style={box}>
+  const current = login.step === "checking" ? 2 : opened ? 1 : 0;
+  return card(
+    <>
+      <View accessible accessibilityLabel={`Step ${current + 1} of 3: ${steps[current]}`} style={{ ...row, columnGap: 10 }}>
+        {steps.map((step, index) => {
+          const done = index < current;
+          const color = done ? c.statusSuccess : index === current ? c.foreground : c.foregroundMuted;
+          return (
+            <View key={step} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              {index ? <View style={{ width: 16, height: 1, backgroundColor: c.border }} /> : null}
+              <View
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: 10,
+                  borderWidth: 1.5,
+                  borderColor: color,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {done ? (
+                  <Icon name="Check" size={12} color={color} />
+                ) : (
+                  <Text style={{ ...t.caption, fontSize: 11, lineHeight: 14, color }}>{index + 1}</Text>
+                )}
+              </View>
+              <Text style={{ ...t.body, color }}>{step}</Text>
+            </View>
+          );
+        })}
+      </View>
       {login.step === "checking" ? (
         <View style={row}>
           <ActivityIndicator size="small" color={c.foregroundMuted} />
@@ -81,54 +157,95 @@ export function LoginPanel({
         {login.userCode
           ? "Open the page and enter this code:"
           : useCode
-            ? "Open this page on any device, sign in, then paste the code it shows."
+            ? "Sign in on any device, then paste the code it shows, including the part after #."
             : "Open the page and approve. It finishes by itself in a browser on the host computer."}
       </Text>
       {login.userCode ? (
-        <Text selectable style={{ ...t.display, fontFamily: fluid.font.mono, color: c.foreground, letterSpacing: 2 }}>
-          {login.userCode}
-        </Text>
+        <View
+          style={{
+            ...row,
+            justifyContent: "space-between",
+            padding: 12,
+            paddingLeft: 16,
+            borderRadius: fluid.radius.container,
+            borderWidth: 1,
+            borderColor: c.border,
+            backgroundColor: c.surface0,
+          }}
+        >
+          <Text selectable style={{ ...t.display, fontFamily: fluid.font.mono, color: c.foreground, letterSpacing: 4 }}>
+            {login.userCode}
+          </Text>
+          <FluidButton
+            theme={theme}
+            label="Copy"
+            accessibilityLabel="Copy code"
+            icon="Copy"
+            onPress={() => void copy(login.userCode!, "Code")}
+          />
+        </View>
+      ) : null}
+      {useCode ? (
+        <FluidField
+          theme={theme}
+          label="Code from the sign-in page"
+          hideLabel
+          value={code}
+          onChangeText={setCode}
+          placeholder="Paste the whole code, including the part after #"
+          mono
+        />
       ) : null}
       <View style={row}>
-        <FluidButton theme={theme} label="Open sign-in page" variant="primary" onPress={() => void open(link)} />
-        <FluidButton theme={theme} label="Copy link" onPress={() => void copy(link, "Link")} />
-        {login.userCode ? (
-          <FluidButton theme={theme} label="Copy code" onPress={() => void copy(login.userCode!, "Code")} />
+        {useCode ? (
+          <FluidButton
+            theme={theme}
+            label="Finish sign-in"
+            variant="primary"
+            disabled={busy || !code.trim()}
+            onPress={() => onSubmitCode(code)}
+          />
         ) : null}
-        <FluidButton theme={theme} label="Cancel" variant="ghost" onPress={onCancel} />
+        <FluidButton
+          theme={theme}
+          label="Open sign-in page"
+          icon="ExternalLink"
+          variant={useCode ? "secondary" : "primary"}
+          onPress={() => void open(link)}
+        />
+        <FluidButton theme={theme} label="Copy link" icon="Copy" onPress={() => void copy(link, "Link")} />
+        {useCode ? (
+          <FluidButton theme={theme} label="Back" variant="ghost" onPress={() => setUseCode(false)} />
+        ) : (
+          <FluidButton theme={theme} label="Cancel" variant="ghost" onPress={onCancel} />
+        )}
       </View>
       <Text selectable numberOfLines={2} style={{ ...muted, fontFamily: fluid.font.mono }}>
         {link}
       </Text>
-      {login.provider === "claude" && login.codeUrl ? (
-        useCode ? (
-          <View style={{ gap: 8 }}>
-            <FluidField
-              theme={theme}
-              label="Code from the sign-in page"
-              value={code}
-              onChangeText={setCode}
-              placeholder="Paste the whole code, including the part after #"
-              mono
-            />
-            <View style={row}>
-              <FluidButton
-                theme={theme}
-                label="Finish sign-in"
-                variant="primary"
-                disabled={busy || !code.trim()}
-                onPress={() => onSubmitCode(code)}
-              />
-            </View>
-          </View>
-        ) : (
-          <FluidButton theme={theme} label="Signing in on another device? Use a code instead" variant="link" onPress={() => setUseCode(true)} />
-        )
+      {login.provider === "claude" && login.codeUrl && !useCode ? (
+        <View style={{ borderTopWidth: 1, borderTopColor: c.border, paddingTop: 4 }}>
+          <FluidButton
+            theme={theme}
+            label="On another device? Use a code instead"
+            icon="Smartphone"
+            variant="link"
+            accent
+            onPress={() => setUseCode(true)}
+          />
+        </View>
+      ) : null}
+      {login.provider === "codex" && login.userCode ? (
+        <Text style={muted}>Needs "device code login" in ChatGPT → Settings → Security.</Text>
       ) : null}
       {login.provider === "codex" && !login.userCode ? (
         <Text style={muted}>The browser callback only works on the host computer. Elsewhere, cancel and use a device code.</Text>
       ) : null}
-      {login.message || note ? <Text style={muted}>{login.message || note}</Text> : null}
-    </View>
+      {login.message || note ? (
+        <Text accessibilityLiveRegion="polite" style={muted}>
+          {login.message || note}
+        </Text>
+      ) : null}
+    </>,
   );
 }

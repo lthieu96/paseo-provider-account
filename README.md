@@ -1,63 +1,50 @@
 # Provider accounts for Paseo
 
-Plugin quản lý nhiều tài khoản cho từng provider của Paseo: Claude, Codex, Copilot, OpenCode, Pi, OMP và agent ACP. Mỗi account là một provider alias (`agents.providers`) và xuất hiện trong bộ chọn model khi tạo agent. (Tên cũ "Agent profiles" đã đổi vì trùng với tính năng Agent profiles — preset model/mode — có sẵn trong Settings của Paseo. ID plugin `paseo-agent-profiles` giữ nguyên.) Ví dụ: `claude-work` và `claude-personal` dùng hai tài khoản Claude khác nhau.
+Run several accounts per Paseo provider (Claude, Codex, Copilot, OpenCode, Pi, OMP, ACP agents). Each account is a provider alias in `agents.providers`, so it shows up in the model picker, e.g. `claude-work` and `claude-personal`. The plugin ID stays `paseo-agent-profiles`.
 
-Tương thích **Paseo 0.10.3 và 0.11** (`>=0.10.3 <0.12.0`; SDK dev pin 0.11.0). Plugin dùng `addSurface`/`addSidebarItem`, vẫn chạy trên 0.11 dưới dạng alias deprecated; khi lên 0.12 cần chuyển sang `addScreen`/`addSidebarHeaderItem`. Không cần service hay database riêng.
+Supports Paseo `>=0.10.3 <0.12.0`. It uses `addSurface`/`addSidebarItem`, which 0.12 replaces with `addScreen`/`addSidebarHeaderItem`.
 
-## Sử dụng
+## Usage
 
-1. Mở **Provider accounts** trong sidebar, hoặc **Manage provider accounts** trong Command Center.
-2. **New account** mở hộp thoại → chọn agent → nhập tên (ID như `claude-work` tự điền theo tên).
-3. **Sign-in** (Claude/Codex): chỉ hỗ trợ **OAuth qua CLI chính thức**, chạy ngầm trên daemon, không mở terminal. Bấm **Sign in** (Claude) hoặc **Sign in with a device code** / **Use the browser** (Codex), rồi **Open sign-in page**:
-   - Trên chính máy chạy daemon: duyệt trong trình duyệt là xong (callback `localhost`).
-   - Từ máy khác hoặc điện thoại: Claude chọn **Use a code instead**, mở link, đăng nhập rồi dán mã (cả phần sau `#`); Codex dùng mã thiết bị (cần bật "device code login" trong ChatGPT → Settings → Security).
-   - Xong thì hộp thoại hiện email và gói của account; login nằm trong **Account folder**. Bấm lại bất cứ lúc nào để đăng nhập lại. Đóng hộp thoại sẽ hủy lượt đăng nhập đang chờ.
-   - Account folder Claude **mới hoặc trống** được nối với `~/.claude` giống chế độ merged của clausona. Settings, CLAUDE.md, skills, hooks, plugins, sessions và history được symlink dùng chung. Login, MCP cấp user (`.claude.json`), backups, policy của org và trạng thái xác thực MCP vẫn riêng từng account. Folder đã có dữ liệu thì không bị đụng tới.
-   - Claude cần bản có `claude auth login` (Claude Code 2.x). Các agent khác dùng login của chính CLI đó, hoặc biến môi trường/command trong **More options**.
-4. **Add account** / **Save**, rồi chọn account trong bộ chọn model của agent mới. Đóng hộp thoại bằng ✕, Cancel, Esc hoặc bấm ra ngoài (dữ liệu chưa lưu bị bỏ).
+1. Open **Provider accounts** from the sidebar or the Command Center.
+2. **New account**: pick an agent, enter a name (the ID is derived from it).
+3. Claude and Codex sign in through their official CLI login, run in the background on the daemon:
+   - On the daemon machine, approve in the browser.
+   - Elsewhere, Claude uses **Use a code instead** (paste the whole code, including the part after `#`). Codex uses a device code (enable "device code login" in ChatGPT → Settings → Security).
+   - A new or empty Claude account folder shares settings, skills, hooks, plugins and history with `~/.claude`. Login and MCP auth stay per account.
+4. Save, then pick the account in the model picker.
 
-Danh sách nhóm theo agent và hiển thị usage của từng account Claude/Codex. Bấm vào một dòng để sửa, dùng công tắc để bật/tắt; nút xóa nằm cuối hộp thoại sửa. Xóa account không xóa thư mục tài khoản và không logout CLI.
+The list groups accounts by agent and shows each Claude/Codex account's email, plan and usage limits (5-hour, weekly, per-model weekly such as Fable). Deleting an account does not delete its folder or sign out the CLI.
 
-## Bảo mật
+## Security
 
-- Plugin không lưu token hay API key cho Claude/Codex: login do CLI chính thức giữ trong account folder (Claude trên macOS: Keychain của CLI; Codex: `auth.json` hoặc keyring).
-- Khi lưu, account Claude/Codex được xóa trắng mọi biến chọn credential/backend khác (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_*`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`…), kể cả giá trị kế thừa từ daemon, và `ANTHROPIC_BASE_URL` được ghim về API chính thức.
-- Account tạo bằng bản cũ (token, API key, endpoint riêng) hiện "Old sign-in" trong danh sách; lưu lại sẽ chuyển sang CLI login. Plugin không tự dọn token cũ trong Keychain (service `paseo-agent-profiles`); xóa bằng Keychain Access nếu cần. Account dùng token Keychain sẽ không chạy được nữa cho tới khi chuyển sang CLI login.
-- Giá trị env đã lưu không bao giờ được gửi về giao diện.
+- No Claude/Codex tokens or API keys are stored by the plugin. The official CLI keeps the login in the account folder (macOS Keychain for Claude, `auth.json` or keyring for Codex).
+- Saving a Claude/Codex account blanks inherited credential and backend variables (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_USE_*`, `OPENAI_API_KEY`, …) and pins `ANTHROPIC_BASE_URL` to the official API. An `apiKeyHelper` in Claude settings can still take precedence.
+- Accounts from older versions (token, API key, custom endpoint) show "Old sign-in"; saving switches them to CLI login. Old Keychain tokens (service `paseo-agent-profiles`) are not removed automatically.
+- Saved environment values are never sent to the UI.
 
-## Cài đặt và phát triển
+## Install and develop
 
 ```sh
+npm ci --omit=dev   # Claude usage loads @anthropic-ai/claude-agent-sdk at runtime
 paseo plugin install /absolute/path/to/paseo-agent-profiles
 paseo plugin reload paseo-agent-profiles
 ```
 
-Hoặc dán đường dẫn thư mục vào **Settings → Plugins → Plugin source**. Daemon không cần `npm install`. Khi phát triển (Node 22.18+ hoặc 24+):
+Development (Node 22.18+ or 24+): `npm ci --ignore-scripts && npm run typecheck && npm test`.
 
-```sh
-npm ci --ignore-scripts
-npm run typecheck
-npm test
-```
-
-Cấu trúc:
-
-| Đường dẫn | Vai trò |
+| Path | Role |
 | --- | --- |
-| `shared/` | Hợp đồng RPC và schema (zod) dùng chung client/server |
-| `server/profiles.ts` | Đọc/lưu/bật/tắt/xóa alias, ép CLI login cho Claude/Codex |
-| `server/login.ts` | Đăng nhập trong app: chạy `claude auth login` / `codex app-server` ngầm, trả link/mã cho hộp thoại |
-| `server/usage.ts` | Đọc hạn mức Claude/Codex từ CLI login của từng account |
-| `client/draft.ts` | Trạng thái form và chuyển thành input lưu (thuần, có test) |
-| `client/profiles.tsx`, `profile-list.tsx`, `profile-form.tsx`, `login-panel.tsx`, `usage.tsx` | Giao diện |
-| `client/fluid.tsx` | Design system: bản chuyển sang React Native của [Fluid Functionalism](https://github.com/mickadesign/fluid-functionalism) |
+| `shared/` | RPC contracts and zod schemas |
+| `server/profiles.ts` | Read, save, toggle and delete aliases; enforce CLI login |
+| `server/login.ts` | In-app sign-in via `claude auth login` / `codex app-server` |
+| `server/usage.ts` | Usage limits, plan and email per account |
+| `client/` | React Native UI; `fluid.tsx` is the component kit, `draft.ts` the tested form logic |
+| `design/export/` | Design references for the UI |
 
-## Ghi chú kỹ thuật (Paseo 0.10.3 / 0.11)
+## Notes
 
-- Patch SDK ở top-level: `{ providers: { id: {...} } }`, xóa bằng `{ removeProviders: [id] }`. Không dùng cả hai cho cùng một ID trong một patch.
-- Trong bộ nhớ, `env` được deep-merge, nhưng khi ghi file thì bị thay toàn bộ. Vì vậy server luôn gửi env đầy đủ đã ghép. Không xóa được hẳn một key env: muốn bỏ biến hoặc bỏ custom command thì tạo account mới.
-- Chuỗi rỗng dùng để chặn biến kế thừa: cờ `CLAUDE_CODE_USE_*="0"` vẫn bị CLI cũ coi là bật, còn `""` thì không.
-- Thứ tự ưu tiên credential của Claude: cloud/gateway, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`, `apiKeyHelper`, `CLAUDE_CODE_OAUTH_TOKEN`, rồi mới tới login của CLI. Plugin xóa trắng các biến, nhưng `apiKeyHelper` trong settings của Claude vẫn có thể thắng.
-- Login CLI của Claude trên macOS nằm trong Keychain với service `Claude Code-credentials-<8 hex đầu của sha256(CLAUDE_CONFIG_DIR)>`. Codex lưu `CODEX_HOME/auth.json` hoặc keyring của OS.
-- `claude auth login` gọi `$BROWSER` với link callback `localhost` và in ra stdout link dạng code (`platform.claude.com`), rồi chờ mã trên stdin; CLI chỉ cần mã có hậu tố `#state`. `codex app-server` nói JSON-RPC theo dòng: `initialize` → `initialized` → `account/login/start` (`chatgpt` | `chatgptDeviceCode`) → sự kiện `account/login/completed` → `account/read`.
-- Kiểm tra revision chặn việc ghi đè một bản sửa cũ, nhưng API cấu hình chưa có compare-and-swap với các ứng dụng khác.
+- Config patches use `{ providers: { id: … } }` and `{ removeProviders: [id] }`, never both for one ID. `env` is replaced as a whole on write, so the server always sends the merged env. A variable cannot be removed; create a new account instead.
+- Empty strings block inherited variables (older CLIs treat `CLAUDE_CODE_USE_*="0"` as on).
+- The SDK is imported with a non-literal specifier: Paseo's plugin compiler follows type imports, and the SDK's bundled `.d.mts` files reference paths that do not exist.
+- Revision checks stop overwriting a stale edit, but the config API has no compare-and-swap.

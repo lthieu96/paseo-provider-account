@@ -1,7 +1,6 @@
 // In-app sign-in: run the official CLI in the background on the daemon host and surface its sign-in
-// link (and code) to the dialog, instead of opening a terminal. Approach adapted from ZeroSub (MIT,
-// kapybara-org/zerosub @2354700): Claude via `claude auth login`, Codex via `codex app-server`'s
-// account API. OAuth stays in the CLIs; the plugin never sees or stores a credential.
+// link (and code) to the dialog, instead of opening a terminal. OAuth stays in the CLIs; the plugin
+// never sees or stores a credential.
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { chmod, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";

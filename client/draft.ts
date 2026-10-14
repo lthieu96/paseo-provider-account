@@ -1,4 +1,5 @@
-// Form state for one profile and its conversion to the save RPC input. No React here, so it is unit-tested.
+// Form state for one profile and its conversion to the save RPC input, plus the list's filter. No React
+// here, so it is unit-tested.
 import {
   claudeAuthVariables,
   saveInputSchema,
@@ -37,6 +38,21 @@ const managedVariables = new Set([...claudeAuthVariables, "OPENAI_API_KEY", "OPE
 
 export function isManaged(provider: Profile["provider"]): provider is "claude" | "codex" {
   return provider === "claude" || provider === "codex";
+}
+
+// The list's filter tabs: Claude, Codex, and every other agent together.
+export type ProviderGroup = "claude" | "codex" | "other";
+export const providerGroup = (provider: Profile["provider"]): ProviderGroup => (isManaged(provider) ? provider : "other");
+
+// Search and filter combine; counts follow the search so each tab says how many matches it holds.
+export function filterProfiles(profiles: Profile[], search: string, filter: ProviderGroup | "all") {
+  const query = search.trim().toLowerCase();
+  const found = profiles.filter((profile) =>
+    `${profile.label} ${profile.id} ${providerLabels[profile.provider]}`.toLowerCase().includes(query),
+  );
+  const counts = { all: found.length, claude: 0, codex: 0, other: 0 };
+  for (const profile of found) counts[providerGroup(profile.provider)]++;
+  return { counts, visible: filter === "all" ? found : found.filter((p) => providerGroup(p.provider) === filter) };
 }
 
 export function slug(label: string) {

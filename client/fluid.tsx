@@ -1,8 +1,8 @@
-/* Native adaptation of Fluid Functionalism (MIT, commit bf9ece4): button, input-group,
- * select, switch, card and dialog contracts. See THIRD-PARTY-NOTICES.md.
- * Colors come from the Paseo theme; geometry, type and motion follow the Fluid tokens.
+/* Native button, input-group, segmented control, switch, card and dialog components.
+ * Colors come from the Paseo theme; geometry, type and motion follow shared design tokens.
  */
 import type { PluginTheme } from "@getpaseo/plugin";
+import { Icon } from "@getpaseo/plugin/client/react-native";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
@@ -77,13 +77,63 @@ export function FocusRing({ visible, inset = -2 }: { visible: boolean; inset?: n
   ) : null;
 }
 
-// Only the DOM shape needed for menu keyboard navigation; native controls use accessibility actions.
+// Only the DOM shape needed for radiogroup keyboard navigation; native controls use accessibility actions.
 type RadioElement = { focus(): void; closest(selector: string): RadioElement | null };
 type KeyboardEvent = { key: string; preventDefault(): void; target: RadioElement; currentTarget: { querySelectorAll(selector: string): ArrayLike<RadioElement> } };
 
+// Spread on a radiogroup: arrow keys, Home and End move focus between its radios on web; Enter/Space
+// activate the focused one through Pressable. Radios use a roving tabIndex (0 when checked).
+export const radioKeys =
+  Platform.OS === "web"
+    ? {
+        onKeyDown(event: KeyboardEvent) {
+          const items = Array.from(event.currentTarget.querySelectorAll('[role="radio"]'));
+          const current = items.indexOf(event.target.closest('[role="radio"]')!);
+          const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key];
+          const next =
+            step !== undefined
+              ? (current + step + items.length) % items.length
+              : event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? items.length - 1
+                  : -1;
+          if (next < 0) return;
+          event.preventDefault();
+          items[next].focus();
+        },
+      }
+    : {};
+
+// A status tint behind content: theme colors are opaque, so the fill (or outline) is drawn at an opacity.
+export function Tint({
+  color,
+  opacity,
+  radius = fluid.radius.container,
+  outline = false,
+}: {
+  color: string;
+  opacity: number;
+  radius?: number;
+  outline?: boolean;
+}) {
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: "absolute",
+        inset: 0,
+        borderRadius: radius,
+        opacity,
+        ...(outline ? { borderWidth: 1, borderColor: color } : { backgroundColor: color }),
+      }}
+    />
+  );
+}
 
 // "link" (card.tsx action link): no padding or fill, so its text lines up with surrounding content.
-type ButtonVariant = "primary" | "secondary" | "tertiary" | "ghost" | "link";
+// "accent": the dialog's confirming action.
+type ButtonVariant = "primary" | "accent" | "secondary" | "tertiary" | "ghost" | "link";
 
 // button.tsx: the fill contracts one pixel per edge while pressed instead of scaling.
 export function FluidButton({
@@ -96,12 +146,18 @@ export function FluidButton({
   loading = false,
   accessibilityLabel,
   expanded,
+  icon,
+  iconOnly = false,
+  accent = false,
 }: {
   theme: PluginTheme;
   label: string;
   onPress(): void;
   accessibilityLabel?: string; // for symbol-only labels such as ✕
   expanded?: boolean; // disclosure buttons
+  icon?: string; // Lucide name, before the label
+  iconOnly?: boolean; // square button; the label stays as the accessibility label
+  accent?: boolean; // accent-colored text for in-line actions on link and ghost buttons
   variant?: ButtonVariant;
   destructive?: boolean;
   disabled?: boolean;
@@ -126,7 +182,8 @@ export function FluidButton({
       onPressIn={() => setFocus(false)} // approximate :focus-visible
       style={{
         height: fluid.control,
-        paddingHorizontal: variant === "link" ? 0 : 16,
+        width: iconOnly ? fluid.control : undefined,
+        paddingHorizontal: variant === "link" || iconOnly ? 0 : icon ? 12 : 16,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
@@ -138,15 +195,19 @@ export function FluidButton({
     >
       {({ pressed }) => {
         const lit = (hover || pressed) && !inactive;
-        const solid = variant === "primary" || variant === "secondary";
+        const solid = variant === "primary" || variant === "accent" || variant === "secondary";
         const color =
           variant === "primary"
             ? c.surface0
-            : destructive
-              ? c.statusDanger
-              : (variant === "ghost" || variant === "link") && !lit
-                ? c.foregroundMuted
-                : c.foreground;
+            : variant === "accent"
+              ? c.accentForeground
+              : destructive
+                ? c.statusDanger
+                : accent
+                  ? c.accent
+                  : (variant === "ghost" || variant === "link") && !lit
+                    ? c.foregroundMuted
+                    : c.foreground;
         return (
           <>
             <View
@@ -158,7 +219,9 @@ export function FluidButton({
                 backgroundColor:
                   variant === "primary"
                     ? c.foreground
-                    : solid || (lit && variant !== "link")
+                    : variant === "accent"
+                      ? c.accent
+                      : solid || (lit && variant !== "link")
                       ? c.surface2
                       : "transparent",
                 opacity: solid && lit ? (pressed ? 0.8 : 0.9) : 1,
@@ -167,13 +230,22 @@ export function FluidButton({
               }}
             />
             <FocusRing visible={focus} />
-            {loading ? <ActivityIndicator size="small" color={color} /> : null}
-            <Text
-              numberOfLines={1}
-              style={{ ...type.body, fontWeight: "500", color }}
-            >
-              {label}
-            </Text>
+            {loading ? (
+              <ActivityIndicator size="small" color={color} />
+            ) : icon ? (
+              // A View stacks above the absolute fill on web; a bare svg would paint under it.
+              <View>
+                <Icon name={icon} size={16} color={color} />
+              </View>
+            ) : null}
+            {iconOnly && (icon || loading) ? null : (
+              <Text
+                numberOfLines={1}
+                style={{ ...type.body, fontWeight: "500", color }}
+              >
+                {label}
+              </Text>
+            )}
           </>
         );
       }}
@@ -196,6 +268,7 @@ export function FluidField({
   disabled = false,
   hideLabel = false,
   mono = false,
+  icon,
 }: {
   theme: PluginTheme;
   label: string;
@@ -209,6 +282,7 @@ export function FluidField({
   disabled?: boolean;
   hideLabel?: boolean;
   mono?: boolean;
+  icon?: string; // Lucide name inside the field's leading edge
 }) {
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -229,6 +303,11 @@ export function FluidField({
           {label}
         </Text>
       )}
+      {icon ? (
+        <View pointerEvents="none" style={{ position: "absolute", left: 10, top: (hideLabel ? 0 : 24) + 10, zIndex: 1 }}>
+          <Icon name={icon} size={16} color={c.foregroundMuted} />
+        </View>
+      ) : null}
       <TextInput
         accessibilityLabel={label}
         accessibilityHint={error || helper || undefined}
@@ -252,6 +331,7 @@ export function FluidField({
           borderRadius: fluid.radius.item,
           minHeight: multiline ? 88 : fluid.control,
           paddingHorizontal: 10,
+          paddingLeft: icon ? 34 : 10,
           paddingVertical: 8,
           fontFamily: mono && value ? fluid.font.mono : fluid.font.body, // hints stay in the text face
           // 16px on touch avoids focus zoom (type-scale.ts fieldTouchClass).
@@ -339,17 +419,15 @@ export function FluidRow({
   theme,
   label,
   compact = false,
-  raised = false,
   children,
 }: {
   theme: PluginTheme;
   label: string;
   compact?: boolean;
-  raised?: boolean; // lets a floating menu inside paint over the rows after it
   children: ReactNode;
 }) {
   return (
-    <View style={{ flexDirection: compact ? "column" : "row", gap: compact ? 6 : 16, zIndex: raised ? 1 : 0 }}>
+    <View style={{ flexDirection: compact ? "column" : "row", gap: compact ? 6 : 16 }}>
       <Text
         style={{
           ...type.body,
@@ -360,7 +438,7 @@ export function FluidRow({
       >
         {label}
       </Text>
-      <View style={{ flex: compact ? undefined : 1, minWidth: 0, gap: 8, zIndex: raised ? 1 : 0 }}>{children}</View>
+      <View style={{ flex: compact ? undefined : 1, minWidth: 0, gap: 8 }}>{children}</View>
     </View>
   );
 }
@@ -371,13 +449,12 @@ type DomElement = {
   contains(node: unknown): boolean;
   querySelectorAll(selector: string): ArrayLike<DomElement>;
 };
-type DomEvent = { key: string; shiftKey: boolean; target: unknown; preventDefault(): void; stopPropagation(): void };
+type DomEvent = { key: string; shiftKey: boolean; preventDefault(): void };
 type DomDocument = {
   activeElement: DomElement | null;
-  addEventListener(type: "keydown" | "pointerdown", listener: (event: DomEvent) => void, capture?: boolean): void;
-  removeEventListener(type: "keydown" | "pointerdown", listener: (event: DomEvent) => void, capture?: boolean): void;
+  addEventListener(type: "keydown", listener: (event: DomEvent) => void): void;
+  removeEventListener(type: "keydown", listener: (event: DomEvent) => void): void;
 };
-const webDocument = () => (Platform.OS === "web" ? (globalThis as { document?: DomDocument }).document : undefined);
 const tabbable = 'input:not([disabled]), textarea:not([disabled]), [tabindex="0"]';
 
 // dialog.tsx: a raised panel over a dimmed backdrop, drawn inside the plugin surface rather than as a
@@ -387,6 +464,7 @@ const tabbable = 'input:not([disabled]), textarea:not([disabled]), [tabindex="0"
 export function FluidDialog({
   theme,
   title,
+  subtitle,
   compact = false,
   onClose,
   footer,
@@ -394,6 +472,7 @@ export function FluidDialog({
 }: {
   theme: PluginTheme;
   title: string;
+  subtitle?: string;
   compact?: boolean;
   onClose(): void;
   footer: ReactNode;
@@ -494,15 +573,22 @@ export function FluidDialog({
             borderBottomColor: c.border,
           }}
         >
-          <Text
-            accessibilityRole="header"
-            {...headingLevel(2)}
-            numberOfLines={1}
-            style={{ ...t.title, flex: 1, color: c.foreground, fontWeight: fluid.semibold }}
-          >
-            {title}
-          </Text>
-          <FluidButton theme={theme} label="✕" accessibilityLabel="Close" variant="ghost" onPress={onClose} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text
+              accessibilityRole="header"
+              {...headingLevel(2)}
+              numberOfLines={1}
+              style={{ ...t.title, color: c.foreground, fontWeight: fluid.semibold }}
+            >
+              {title}
+            </Text>
+            {subtitle ? (
+              <Text numberOfLines={1} style={{ ...t.body, color: c.foregroundMuted }}>
+                {subtitle}
+              </Text>
+            ) : null}
+          </View>
+          <FluidButton theme={theme} label="Close" icon="X" iconOnly variant="ghost" onPress={onClose} />
         </View>
         <ScrollView
           style={{ flexGrow: compact ? 1 : 0, flexShrink: 1 }}
@@ -531,154 +617,63 @@ export function FluidDialog({
   );
 }
 
-// select.tsx: a field-like trigger with a floating option menu on web. react-native-web Views each
-// form a stacking context, so every ancestor up to the overlapped content needs a raised zIndex
-// (see FluidRow `raised`). Outside click, Escape and Tab close it; arrows move between options; choosing returns focus to the trigger. Native keeps the list
-// inline, because touches outside a parent's bounds are not delivered there.
-export function FluidSelect<Value extends string>({
+// segmented-control: one choice of a few, with optional counts. A radiogroup, like the select menu.
+export function FluidSegmented<Value extends string>({
   theme,
   label,
   value,
   options,
   onChange,
-  disabled = false,
-}: SelectProps<Value>) {
-  const [open, setOpen] = useState(false);
-  const [focus, setFocus] = useState(false);
-  const root = useRef<View>(null);
-  const trigger = useRef<View>(null);
-  const menu = useRef<View>(null);
-  const floating = Platform.OS === "web";
+  compact = false,
+}: {
+  theme: PluginTheme;
+  label: string;
+  value: Value;
+  options: Array<{ value: Value; label: string; count?: number }>;
+  onChange(value: Value): void;
+  compact?: boolean; // full width, equal segments
+}) {
   const c = theme.colors;
-  const current = options.find((option) => option.value === value);
-  const dom = (ref: { current: View | null }) => ref.current as unknown as DomElement | null;
-  function close(refocus: boolean) {
-    setOpen(false);
-    if (refocus) dom(trigger)?.focus();
-  }
-  useEffect(() => {
-    const doc = webDocument();
-    const node = dom(root);
-    if (!open || !doc || !node) return;
-    dom(menu)?.querySelectorAll('[aria-checked="true"]')[0]?.focus();
-    // Capture phase, so Escape closes only the menu and not the dialog around it.
-    const onKey = (event: DomEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        event.preventDefault();
-        close(true);
-      } else if (event.key === "Tab") setOpen(false);
-    };
-    const onPointer = (event: DomEvent) => {
-      if (!node.contains(event.target)) setOpen(false);
-    };
-    doc.addEventListener("keydown", onKey, true);
-    doc.addEventListener("pointerdown", onPointer, true);
-    return () => {
-      doc.removeEventListener("keydown", onKey, true);
-      doc.removeEventListener("pointerdown", onPointer, true);
-    };
-  }, [open]);
-  // Arrow keys move focus only; Enter/Space activate the focused option through Pressable.
-  const menuKeys =
-    Platform.OS === "web"
-      ? {
-          onKeyDown(event: KeyboardEvent) {
-            const items = Array.from(event.currentTarget.querySelectorAll('[role="radio"]'));
-            const current = items.indexOf(event.target.closest('[role="radio"]')!);
-            const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key];
-            const next =
-              step !== undefined
-                ? (current + step + items.length) % items.length
-                : event.key === "Home"
-                  ? 0
-                  : event.key === "End"
-                    ? items.length - 1
-                    : -1;
-            if (next < 0) return;
-            event.preventDefault();
-            items[next].focus();
-          },
-        }
-      : {};
   return (
-    <View ref={root} style={{ position: "relative", zIndex: open ? 20 : 0 }}>
-      <Pressable
-        ref={trigger}
-        accessibilityRole="button"
-        accessibilityLabel={`${label}: ${current?.label ?? "none"}`}
-        accessibilityState={{ expanded: open, disabled }}
-        {...(Platform.OS === "web" ? { "aria-haspopup": "true" } : {})}
-        disabled={disabled}
-        onPress={() => setOpen(!open)}
-        onFocus={() => setFocus(true)}
-        onBlur={() => setFocus(false)}
-        onPressIn={() => setFocus(false)}
-        style={{
-          height: fluid.control,
-          paddingHorizontal: 10,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          borderRadius: fluid.radius.item,
-          borderWidth: 1,
-          borderColor: open ? fluid.focusRing : c.border,
-          backgroundColor: c.surface0,
-          opacity: disabled ? 0.5 : 1,
-        }}
-      >
-        <FocusRing visible={focus} />
-        <Text style={{ ...type.body, color: c.foreground }}>{current?.label}</Text>
-        <Text aria-hidden style={{ ...type.caption, color: c.foregroundMuted }}>
-          {open ? "▲" : "▼"}
-        </Text>
-      </Pressable>
-      {open ? (
-        <View
-          ref={menu}
-          accessibilityRole="radiogroup"
-          accessibilityLabel={label}
-          {...menuKeys}
-          style={{
-            ...(floating ? { position: "absolute" as const, top: fluid.control + 4, left: 0, right: 0 } : { marginTop: 4 }),
-            padding: 4,
-            borderRadius: fluid.radius.item + 4,
-            borderWidth: 1,
-            borderColor: c.border,
-            backgroundColor: c.surface1,
-            shadowColor: "#000",
-            shadowOpacity: 0.25,
-            shadowRadius: 16,
-            shadowOffset: { width: 0, height: 8 },
-          }}
-        >
-          {options.map((option) => (
-            <SelectOption
-              key={option.value}
-              theme={theme}
-              label={option.label}
-              checked={option.value === value}
-              onPress={() => {
-                onChange(option.value);
-                close(true);
-              }}
-            />
-          ))}
-        </View>
-      ) : null}
+    <View
+      accessibilityRole="radiogroup"
+      accessibilityLabel={label}
+      {...radioKeys}
+      style={{
+        flexDirection: "row",
+        alignSelf: compact ? "stretch" : "flex-start",
+        padding: 3,
+        gap: 2,
+        borderRadius: fluid.radius.ring,
+        borderWidth: 1,
+        borderColor: c.border,
+      }}
+    >
+      {options.map((option) => (
+        <Segment
+          key={option.value}
+          theme={theme}
+          option={option}
+          checked={option.value === value}
+          grow={compact}
+          onPress={() => onChange(option.value)}
+        />
+      ))}
     </View>
   );
 }
 
-function SelectOption({
+function Segment({
   theme,
-  label,
+  option,
   checked,
+  grow,
   onPress,
 }: {
   theme: PluginTheme;
-  label: string;
+  option: { label: string; count?: number };
   checked: boolean;
+  grow: boolean;
   onPress(): void;
 }) {
   const [hover, setHover] = useState(false);
@@ -687,7 +682,7 @@ function SelectOption({
   return (
     <Pressable
       accessibilityRole="radio"
-      accessibilityLabel={label}
+      accessibilityLabel={option.count === undefined ? option.label : `${option.label}, ${option.count}`}
       aria-checked={checked}
       accessibilityState={{ checked }}
       tabIndex={checked ? 0 : -1}
@@ -696,27 +691,27 @@ function SelectOption({
       onHoverOut={() => setHover(false)}
       onFocus={() => setFocus(true)}
       onBlur={() => setFocus(false)}
+      onPressIn={() => setFocus(false)}
       style={{
-        height: 32,
-        paddingHorizontal: 8,
+        flexGrow: grow ? 1 : 0,
+        flexBasis: grow ? 0 : "auto",
+        height: fluid.control - 8,
+        paddingHorizontal: 12,
         flexDirection: "row",
         alignItems: "center",
-        justifyContent: "space-between",
-        borderRadius: fluid.radius.item - 2,
-        backgroundColor: hover || focus ? c.surface2 : "transparent",
+        justifyContent: "center",
+        gap: 6,
+        borderRadius: fluid.radius.item - 1,
+        backgroundColor: checked ? c.surface2 : "transparent",
       }}
     >
-      <Text style={{ ...type.body, color: c.foreground, fontWeight: checked ? fluid.semibold : "400" }}>{label}</Text>
-      {checked ? <Text aria-hidden style={{ ...type.body, color: c.foreground }}>✓</Text> : null}
+      <FocusRing visible={focus} inset={-1} />
+      <Text style={{ ...type.body, fontWeight: "500", color: checked || hover ? c.foreground : c.foregroundMuted }}>
+        {option.label}
+      </Text>
+      {option.count === undefined ? null : (
+        <Text style={{ ...type.caption, color: c.foregroundMuted, fontVariant: ["tabular-nums"] }}>{option.count}</Text>
+      )}
     </Pressable>
   );
 }
-
-type SelectProps<Value extends string> = {
-  theme: PluginTheme;
-  label: string;
-  value: Value;
-  options: Array<{ value: Value; label: string }>;
-  onChange(value: Value): void;
-  disabled?: boolean;
-};

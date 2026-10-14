@@ -16,6 +16,7 @@ export const usageReportSchema = z.object({
   message: z.string().nullable(),
   source: z.string(),
   planLabel: z.string().nullable(),
+  email: z.string().nullable().default(null),
   fetchedAt: z.string(),
   windows: z.array(usageWindowSchema),
 });
