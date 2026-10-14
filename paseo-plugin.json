@@ -2,5 +2,6 @@
   "id": "paseo-agent-profiles",
   "requirements": {
     "paseo": ">=0.10.3 <0.12.0"
-  }
+  },
+  "build": [["npm", "ci", "--omit=dev"]]
 }

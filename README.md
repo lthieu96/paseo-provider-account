@@ -26,10 +26,10 @@ The list groups accounts by agent and shows each Claude/Codex account's email, p
 ## Install and develop
 
 ```sh
-npm ci --omit=dev   # Claude usage loads @anthropic-ai/claude-agent-sdk at runtime
-paseo plugin install /absolute/path/to/paseo-agent-profiles
-paseo plugin reload paseo-agent-profiles
+paseo plugin install github:lthieu96/paseo-provider-account
 ```
+
+Git installs run `npm ci --omit=dev` (declared as `build` in `paseo-plugin.json`) to fetch `@anthropic-ai/claude-agent-sdk`, which Claude usage loads at runtime; npm must be on the daemon's `PATH`. A local folder install runs nothing, so run `npm ci --omit=dev` there first, then `paseo plugin install /absolute/path` and `paseo plugin reload paseo-agent-profiles` after edits.
 
 Development (Node 22.18+ or 24+): `npm ci --ignore-scripts && npm run typecheck && npm test`.
 
