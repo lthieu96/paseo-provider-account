@@ -2,7 +2,7 @@
 
 Run several accounts per Paseo provider (Claude, Codex, Copilot, OpenCode, Pi, OMP, ACP agents). Each account is a provider alias in `agents.providers`, so it shows up in the model picker, e.g. `claude-work` and `claude-personal`. The plugin ID stays `paseo-agent-profiles`.
 
-Supports Paseo `>=0.10.3 <0.12.0`. It uses `addSurface`/`addSidebarItem`, which 0.12 replaces with `addScreen`/`addSidebarHeaderItem`.
+Supports Paseo `>=0.11.0` (it uses `addScreen`/`addSidebarHeaderItem`, which 0.10 lacks).
 
 ## Usage
 

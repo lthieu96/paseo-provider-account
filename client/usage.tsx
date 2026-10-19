@@ -18,9 +18,11 @@ function resetLabel(iso: string) {
 }
 
 // "5-hour limit" → "5-hour"; the 7-day window is what people call the weekly limit.
-// "Weekly · Fable" shows as "Fable": the full label does not fit a meter column.
-export const windowLabel = (label: string) =>
-  label.replace(/ limit$/, "").replace(/^7-day$/, "Weekly").replace(/^Weekly · /, "");
+// Short labels ("Weekly · Fable" → "Fable") are for one-line summaries.
+export const windowLabel = (label: string, short = false) => {
+  const name = label.replace(/ limit$/, "").replace(/^7-day$/, "Weekly");
+  return short ? name.replace(/^Weekly · /, "") : name;
+};
 
 // Quota meters. Wide: fixed-width columns (label and % over a bar) so bars line up across rows. Compact:
 // stacked rows with fixed label and % columns. Reset times show once a limit is ≥75%.
@@ -82,7 +84,7 @@ export function UsageMeters({
               {track(used, { flex: 1 })}
               {percent({ width: 32, flexShrink: 0, textAlign: "right" })}
             </View>
-            {reset ? <Text style={{ ...muted, paddingLeft: 104 }}>{reset}</Text> : null}
+            {reset ? <Text style={{ ...muted, paddingLeft: 104 }}>{label} {reset}</Text> : null}
           </View>
         ) : (
           <View key={window.id} {...a11y} style={{ width: meterWidth, gap: 4 }}>

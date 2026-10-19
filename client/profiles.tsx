@@ -23,7 +23,7 @@ import {
   type DraftField,
   type ProviderGroup,
 } from "./draft.ts";
-import { FluidButton, FluidDialog, FluidField, FluidSegmented, fluid, headingLevel } from "./fluid.tsx";
+import { FluidButton, FluidDialog, FluidField, FluidSegmented, fluid, headingLevel, squircle } from "./fluid.tsx";
 import { ProfileForm } from "./profile-form.tsx";
 import { ProfileList } from "./profile-list.tsx";
 
@@ -218,7 +218,7 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
                 {...headingLevel(1)}
                 style={{ ...t.display, color: c.foreground, fontWeight: "700" }}
               >
-                Provider accounts
+                {layout.compact ? "Accounts" : "Provider accounts"}
               </Text>
               {layout.compact ? null : (
                 <Text style={muted}>
@@ -227,6 +227,7 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
               )}
             </View>
             <View style={{ flexDirection: "row", gap: 8 }}>
+              {layout.compact ? null : (
               <FluidButton
                 theme={theme}
                 label="Refresh"
@@ -241,6 +242,7 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
                   refreshUsage.mutate();
                 }}
               />
+              )}
               <FluidButton
                 theme={theme}
                 label="New account"
@@ -278,7 +280,8 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
                 count: layout.compact ? undefined : counts[value],
               }))}
             />
-            <View style={{ flex: layout.compact ? undefined : 1, maxWidth: layout.compact ? undefined : 300, marginLeft: "auto", width: layout.compact ? "100%" : undefined }}>
+            {layout.compact ? null : (
+            <View style={{ flex: 1, maxWidth: 300, marginLeft: "auto" }}>
               <FluidField
                 theme={theme}
                 label="Search accounts"
@@ -289,6 +292,7 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
                 placeholder="Search accounts"
               />
             </View>
+            )}
           </View>
           {profiles.isPending ? <Text style={muted}>Loading accounts…</Text> : null}
           {profiles.error ? (
@@ -298,6 +302,7 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
           ) : null}
           {profiles.data && visible.length === 0 ? (
             <View
+              {...squircle}
               style={{
                 padding: 24,
                 gap: 4,
@@ -381,7 +386,9 @@ function ProfilesScreen({ theme, layout, host }: PluginSurfaceProps) {
             key={draft.revision ?? "new"}
             theme={theme}
             compact={layout.compact}
+            hostLabel={host.label}
             draft={draft}
+            report={draft.revision ? usage.data?.reports.find((report) => report.profileId === draft.id) : undefined}
             update={update}
             fieldError={error?.field ? { field: error.field, message: error.message } : null}
             busy={busy}

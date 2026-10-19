@@ -57,6 +57,21 @@ export const fluid = {
 };
 const type = fluid.type(false);
 
+// Cards spread `squircle`: on web, where corner-shape is supported, they become 28px squircles (the
+// same rule as Chat Polish); elsewhere they keep their round radius.
+export const squircle = { dataSet: { paSquircle: "card" } } as object;
+type StyleElement = { textContent: string; remove(): void };
+export function styleCards() {
+  const doc = (globalThis as { document?: { createElement(tag: "style"): StyleElement; head: { appendChild(el: StyleElement): void } } })
+    .document;
+  if (Platform.OS !== "web" || !doc) return () => {};
+  const style = doc.createElement("style");
+  style.textContent =
+    '@supports (corner-shape: squircle) { [data-pa-squircle="card"] { border-radius: 28px !important; corner-shape: squircle; } }';
+  doc.head.appendChild(style);
+  return () => style.remove();
+}
+
 // Heading level for screen readers; react-native-web maps it to aria-level, native ignores it.
 export function headingLevel(level: number): {} {
   return Platform.OS === "web" ? { "aria-level": level } : {};
@@ -111,14 +126,17 @@ export function Tint({
   opacity,
   radius = fluid.radius.container,
   outline = false,
+  card = false,
 }: {
   color: string;
   opacity: number;
   radius?: number;
   outline?: boolean;
+  card?: boolean; // fills a squircle card, so takes its shape
 }) {
   return (
     <View
+      {...(card ? squircle : {})}
       pointerEvents="none"
       style={{
         position: "absolute",
@@ -149,6 +167,7 @@ export function FluidButton({
   icon,
   iconOnly = false,
   accent = false,
+  stretch = false,
 }: {
   theme: PluginTheme;
   label: string;
@@ -158,6 +177,7 @@ export function FluidButton({
   icon?: string; // Lucide name, before the label
   iconOnly?: boolean; // square button; the label stays as the accessibility label
   accent?: boolean; // accent-colored text for in-line actions on link and ghost buttons
+  stretch?: boolean; // full width of the parent
   variant?: ButtonVariant;
   destructive?: boolean;
   disabled?: boolean;
@@ -188,7 +208,7 @@ export function FluidButton({
         alignItems: "center",
         justifyContent: "center",
         gap: 6,
-        alignSelf: "flex-start",
+        alignSelf: stretch ? "stretch" : "flex-start",
         maxWidth: "100%",
         opacity: disabled ? 0.5 : 1,
       }}
@@ -418,26 +438,39 @@ export function FluidSwitch({
 export function FluidRow({
   theme,
   label,
+  trailing = "",
   compact = false,
   children,
 }: {
   theme: PluginTheme;
   label: string;
+  trailing?: string; // a short hint at the end of the label line (stacked layout)
   compact?: boolean;
   children: ReactNode;
 }) {
+  const labelText = (
+    <Text
+      style={{
+        ...type.body,
+        flex: compact ? 1 : undefined,
+        width: compact ? undefined : 132,
+        paddingTop: compact ? 0 : 8,
+        color: theme.colors.foregroundMuted,
+      }}
+    >
+      {label}
+    </Text>
+  );
   return (
     <View style={{ flexDirection: compact ? "column" : "row", gap: compact ? 6 : 16 }}>
-      <Text
-        style={{
-          ...type.body,
-          width: compact ? undefined : 132,
-          paddingTop: compact ? 0 : 8,
-          color: theme.colors.foregroundMuted,
-        }}
-      >
-        {label}
-      </Text>
+      {compact && trailing ? (
+        <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
+          {labelText}
+          <Text style={{ ...type.caption, color: theme.colors.foregroundMuted }}>{trailing}</Text>
+        </View>
+      ) : (
+        labelText
+      )}
       <View style={{ flex: compact ? undefined : 1, minWidth: 0, gap: 8 }}>{children}</View>
     </View>
   );

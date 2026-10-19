@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import { providers, type Profile } from "../shared/profiles.ts";
 import type { LoginState } from "../shared/login.ts";
+import type { UsageReport } from "../shared/usage.ts";
 import { LoginPanel } from "./login-panel.tsx";
 import { ProviderIcon } from "./provider-icon.tsx";
 import {
@@ -15,7 +16,8 @@ import {
   type DraftField,
   type EnvRow,
 } from "./draft.ts";
-import { FluidButton, FluidField, FluidRow, FocusRing, Tint, fluid, headingLevel, radioKeys } from "./fluid.tsx";
+import { FluidButton, FluidField, FluidRow, FocusRing, Tint, fluid, headingLevel, radioKeys, squircle } from "./fluid.tsx";
+import { windowLabel } from "./usage.tsx";
 
 const agentNote = (provider: Profile["provider"]) =>
   isManaged(provider) ? "Sign in in-app" : provider === "acp" ? "Custom command" : "Own login";
@@ -25,7 +27,9 @@ const agentNote = (provider: Profile["provider"]) =>
 export function ProfileForm({
   theme,
   compact,
+  hostLabel,
   draft,
+  report,
   update,
   busy,
   login,
@@ -38,7 +42,9 @@ export function ProfileForm({
 }: {
   theme: PluginTheme;
   compact: boolean;
+  hostLabel: string;
   draft: Draft;
+  report: UsageReport | undefined; // this account's usage, when editing
   fieldError: { field: DraftField; message: string } | null;
   update(patch: Partial<Draft>): void;
   busy: boolean;
@@ -90,8 +96,8 @@ export function ProfileForm({
       {children}
     </View>
   );
-  const row = (label: string, children: ReactNode) => (
-    <FluidRow theme={theme} label={label} compact>
+  const row = (label: string, children: ReactNode, trailing = "") => (
+    <FluidRow theme={theme} label={label} trailing={trailing} compact>
       {children}
     </FluidRow>
   );
@@ -126,6 +132,7 @@ export function ProfileForm({
     update({ env: draft.env.map((item, i) => (i === index ? { ...item, ...patch } : item)) });
   const signInCard = (title: string, description: string, actions: ReactNode) => (
     <View
+      {...squircle}
       style={{
         flexDirection: compact ? "column" : "row",
         alignItems: compact ? "stretch" : "center",
@@ -235,16 +242,61 @@ export function ProfileForm({
               <LoginPanel
                 theme={theme}
                 compact={compact}
+                hostLabel={hostLabel}
                 login={login}
                 busy={busy}
                 onSubmitCode={onSubmitCode}
                 onCancel={onCancelLogin}
                 onRetry={onStartLogin}
               />
+            ) : editing && !draft.legacySignIn && report?.status === "available" ? (
+              <View
+                {...squircle}
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: 16,
+                  borderRadius: fluid.radius.container,
+                  backgroundColor: c.surface2,
+                }}
+              >
+                <View style={{ width: 36, height: 36, alignItems: "center", justifyContent: "center" }}>
+                  <Tint color={c.statusSuccess} opacity={0.16} radius={18} />
+                  <View>
+                    <Icon name="Check" size={18} color={c.statusSuccess} />
+                  </View>
+                </View>
+                <View style={{ flex: 1, minWidth: 160, gap: 2 }}>
+                  <Text style={{ ...t.subtitle, color: c.foreground, fontWeight: fluid.semibold }}>
+                    {report.email ?? "Signed in"}
+                  </Text>
+                  <Text style={{ ...t.body, color: c.foregroundMuted }}>
+                    {[
+                      report.planLabel ? report.planLabel[0].toUpperCase() + report.planLabel.slice(1) : null,
+                      ...report.windows.map(
+                        (w) => `${windowLabel(w.label, true)} ${w.usedPct === null ? "—" : `${Math.round(w.usedPct)}%`}`,
+                      ),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </Text>
+                </View>
+                <FluidButton
+                  theme={theme}
+                  label="Sign in again"
+                  icon="RotateCcw"
+                  variant="tertiary"
+                  disabled={busy || loginStarting}
+                  loading={loginStarting}
+                  onPress={() => onStartLogin(draft.provider === "claude" ? "browser" : "code")}
+                />
+              </View>
             ) : (
               signInCard(
                 draft.provider === "claude" ? "Sign in with your Claude account" : "Sign in with your ChatGPT account",
-                `Runs the official ${draft.provider === "claude" ? "Claude Code" : "Codex"} login on the host. The login stays in the account folder.`,
+                `Runs the official ${draft.provider === "claude" ? "Claude Code" : "Codex"} login on ${hostLabel}. Your token never leaves the account folder.`,
                 <View style={{ gap: 6, alignItems: compact ? "flex-start" : "flex-end" }}>
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                     {draft.provider === "claude" ? (
@@ -295,7 +347,10 @@ export function ProfileForm({
                     placeholder: "Created when you sign in",
                     mono: true,
                     error: errorFor("folder"),
-                    helper: "Absolute path on the host. Keeps this account's login, settings and history apart.",
+                    helper:
+                      draft.provider === "claude"
+                        ? "Shares settings, skills and history with ~/.claude. Login and MCP auth stay separate."
+                        : "Absolute path on the host. Keeps this account's login and history apart.",
                   }),
                 )
               : null}
@@ -306,10 +361,9 @@ export function ProfileForm({
                 multiline: true,
                 mono: true,
                 error: errorFor("models"),
-                helper: draft.pinnedModels.length
-                  ? `Added to the agent's models. Fixed: ${draft.pinnedModels.join(", ")}.`
-                  : "Added to the agent's own models.",
+                helper: draft.pinnedModels.length ? `Fixed: ${draft.pinnedModels.join(", ")}.` : "",
               }),
+              "One per line",
             )}
             {draft.provider !== "acp"
               ? row(
@@ -337,7 +391,7 @@ export function ProfileForm({
                       </View>
                       <View style={{ flex: 3, minWidth: 0 }}>
                         {input(`Value of ${item.name || "variable"}`, item.value, (value) => setEnvRow(index, { value }), {
-                          placeholder: item.saved ? "Saved" : "Value",
+                          placeholder: item.saved ? "•••••• saved" : "Value",
                           mono: true,
                           secret: /key|token|secret|password|credential/i.test(item.name),
                         })}
@@ -371,21 +425,20 @@ export function ProfileForm({
                 {errorFor("env") ? (
                   <Text style={{ ...muted, color: c.statusDanger }}>{errorFor("env")}</Text>
                 ) : null}
-                <Text style={muted}>
-                  {draft.env.some((row) => row.saved && showEnvRow(draft, row))
-                    ? "Saved values stay hidden; type to replace. Removing a saved variable needs a new account."
-                    : "Variables passed to the agent's process."}
-                </Text>
+                {draft.env.some((row) => row.saved && showEnvRow(draft, row)) ? (
+                  <Text style={muted}>Saved values stay hidden; type to replace. Removing a saved variable needs a new account.</Text>
+                ) : null}
               </>,
+              "Passed to the agent process",
             )}
           </View>
         ) : null}
       </View>
 
       {editing ? (
-        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12, padding: 16 }}>
-          <Tint color={c.statusDanger} opacity={0.04} />
-          <Tint color={c.statusDanger} opacity={0.45} outline />
+        <View {...squircle} style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 12, padding: 16 }}>
+          <Tint color={c.statusDanger} opacity={0.04} card />
+          <Tint color={c.statusDanger} opacity={0.45} outline card />
           <View style={{ flex: 1, minWidth: 200, gap: 2 }}>
             <Text
               accessibilityRole="header"

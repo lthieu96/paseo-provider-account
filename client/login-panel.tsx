@@ -4,7 +4,7 @@ import { Icon, copyText } from "@getpaseo/plugin/client/react-native";
 import { useState, type ReactNode } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import type { LoginState } from "../shared/login.ts";
-import { FluidButton, FluidField, Tint, fluid } from "./fluid.tsx";
+import { FluidButton, FluidField, Tint, fluid, squircle } from "./fluid.tsx";
 
 const steps = ["Open page", "Approve", "Done"];
 
@@ -13,6 +13,7 @@ const steps = ["Open page", "Approve", "Done"];
 export function LoginPanel({
   theme,
   compact,
+  hostLabel,
   login,
   busy,
   onSubmitCode,
@@ -21,6 +22,7 @@ export function LoginPanel({
 }: {
   theme: PluginTheme;
   compact: boolean;
+  hostLabel: string;
   login: LoginState;
   busy: boolean;
   onSubmitCode(code: string): void;
@@ -31,6 +33,8 @@ export function LoginPanel({
   const [useCode, setUseCode] = useState(false);
   const [opened, setOpened] = useState(false);
   const [note, setNote] = useState("");
+  // The raw link only shows when it can't be opened or copied, so it can be selected by hand.
+  const [showLink, setShowLink] = useState(false);
   const c = theme.colors;
   const t = fluid.type(compact);
   const text = { ...t.body, color: c.foreground };
@@ -39,25 +43,32 @@ export function LoginPanel({
   const method = login.userCode ? "code" : "browser";
   const open = (url: string) => {
     setOpened(true);
-    return openExternalUrl(url).catch(() => setNote("Couldn't open a browser here. Copy the link instead."));
+    return openExternalUrl(url).catch(() => {
+      setNote("Couldn't open a browser here. Copy the link instead.");
+      setShowLink(true);
+    });
   };
   const copy = (value: string, what: string) => {
     if (what === "Link") setOpened(true);
     return copyText(value).then(
       () => setNote(`${what} copied.`),
-      () => setNote("Copying isn't available here. Select the text below instead."),
+      () => {
+        setNote("Copying isn't available here. Select the text below instead.");
+        setShowLink(true);
+      },
     );
   };
   const row = { flexDirection: "row" as const, flexWrap: "wrap" as const, alignItems: "center" as const, gap: 8 };
   const card = (children: ReactNode, tint?: string, live = false) => (
     <View
+      {...squircle}
       accessibilityLiveRegion={live ? "polite" : undefined}
       style={{ gap: 12, padding: 16, borderRadius: fluid.radius.container, borderWidth: tint ? 0 : 1, borderColor: c.border }}
     >
       {tint ? (
         <>
-          <Tint color={tint} opacity={0.07} />
-          <Tint color={tint} opacity={0.4} outline />
+          <Tint color={tint} opacity={0.07} card />
+          <Tint color={tint} opacity={0.4} outline card />
         </>
       ) : null}
       {children}
@@ -77,7 +88,7 @@ export function LoginPanel({
           <Text style={{ ...t.subtitle, color: c.foreground, fontWeight: fluid.semibold }}>
             {login.email ?? "Signed in"}
           </Text>
-          <Text style={muted}>{[login.plan, "Signed in. Save to finish."].filter(Boolean).join(" · ")}</Text>
+          <Text style={muted}>{[login.plan, "Save to finish"].filter(Boolean).join(" · ")}</Text>
         </View>
         <FluidButton theme={theme} label="Sign in again" icon="RotateCcw" variant="ghost" disabled={busy} onPress={() => onRetry(method)} />
       </View>,
@@ -115,7 +126,7 @@ export function LoginPanel({
         <FluidButton theme={theme} label="Cancel" variant="ghost" onPress={onCancel} />
       </>,
     );
-  const current = login.step === "checking" ? 2 : opened ? 1 : 0;
+  const current = login.step === "checking" ? 2 : opened || useCode ? 1 : 0;
   return card(
     <>
       <View accessible accessibilityLabel={`Step ${current + 1} of 3: ${steps[current]}`} style={{ ...row, columnGap: 10 }}>
@@ -157,8 +168,8 @@ export function LoginPanel({
         {login.userCode
           ? "Open the page and enter this code:"
           : useCode
-            ? "Sign in on any device, then paste the code it shows, including the part after #."
-            : "Open the page and approve. It finishes by itself in a browser on the host computer."}
+            ? "Sign in on any device, then paste the code it shows — including the part after #."
+            : `Open the page and approve in a browser on ${hostLabel}. This finishes by itself.`}
       </Text>
       {login.userCode ? (
         <View
@@ -206,23 +217,23 @@ export function LoginPanel({
             onPress={() => onSubmitCode(code)}
           />
         ) : null}
-        <FluidButton
-          theme={theme}
-          label="Open sign-in page"
-          icon="ExternalLink"
-          variant={useCode ? "secondary" : "primary"}
-          onPress={() => void open(link)}
-        />
-        <FluidButton theme={theme} label="Copy link" icon="Copy" onPress={() => void copy(link, "Link")} />
+        {useCode ? null : (
+          <FluidButton theme={theme} label="Open sign-in page" icon="ExternalLink" variant="primary" onPress={() => void open(link)} />
+        )}
+        {login.userCode ? null : (
+          <FluidButton theme={theme} label="Copy link" icon="Copy" onPress={() => void copy(link, "Link")} />
+        )}
         {useCode ? (
           <FluidButton theme={theme} label="Back" variant="ghost" onPress={() => setUseCode(false)} />
         ) : (
           <FluidButton theme={theme} label="Cancel" variant="ghost" onPress={onCancel} />
         )}
       </View>
-      <Text selectable numberOfLines={2} style={{ ...muted, fontFamily: fluid.font.mono }}>
-        {link}
-      </Text>
+      {showLink ? (
+        <Text selectable numberOfLines={2} style={{ ...muted, fontFamily: fluid.font.mono }}>
+          {link}
+        </Text>
+      ) : null}
       {login.provider === "claude" && login.codeUrl && !useCode ? (
         <View style={{ borderTopWidth: 1, borderTopColor: c.border, paddingTop: 4 }}>
           <FluidButton

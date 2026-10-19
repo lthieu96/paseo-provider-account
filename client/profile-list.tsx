@@ -5,7 +5,7 @@ import { Pressable, Text, View } from "react-native";
 import type { Profile } from "../shared/profiles.ts";
 import type { UsageReport } from "../shared/usage.ts";
 import { isManaged, providerGroup, providerLabels, type ProviderGroup } from "./draft.ts";
-import { FluidButton, FluidSwitch, FocusRing, Tint, fluid, headingLevel } from "./fluid.tsx";
+import { FluidButton, FluidSwitch, FocusRing, Tint, fluid, headingLevel, squircle } from "./fluid.tsx";
 import { ProviderIcon } from "./provider-icon.tsx";
 import { UsageMeters, meterGap, meterWidth, windowLabel } from "./usage.tsx";
 
@@ -59,18 +59,19 @@ export function ProfileList({
               <Text
                 accessibilityRole="header"
                 {...headingLevel(2)}
-                style={{ ...t.subtitle, color: c.foreground, fontWeight: fluid.semibold }}
+                style={{ ...t.subtitle, color: compact ? c.foregroundMuted : c.foreground, fontWeight: fluid.semibold }}
               >
                 {label}
               </Text>
-              <Text style={{ ...t.caption, flex: 1, color: c.foregroundMuted }}>{group.length}</Text>
-              {minutes === null ? null : (
+              <Text style={{ ...t.caption, flex: 1, color: c.foregroundMuted }}>{compact ? "" : group.length}</Text>
+              {minutes === null || compact ? null : (
                 <Text style={{ ...t.caption, color: c.foregroundMuted }}>
                   Usage updated {minutes < 1 ? "just now" : `${minutes} min ago`}
                 </Text>
               )}
             </View>
             <View
+              {...(compact ? {} : squircle)}
               style={
                 compact
                   ? { gap: 12 }
@@ -199,7 +200,7 @@ function ProfileRow({
           )}
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          {pill ? (
+          {pill && !compact ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 7, borderRadius: 999 }}>
               <Tint color={pill.color} opacity={0.14} radius={999} />
               <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: pill.color }} />
@@ -207,7 +208,7 @@ function ProfileRow({
             </View>
           ) : null}
           <Text numberOfLines={1} style={{ ...t.body, flexShrink: 1, color: c.foregroundMuted }}>
-            {[report?.email, detail].filter(Boolean).join(" · ")}
+            {[compact ? profile.id : report?.email, detail].filter(Boolean).join(" · ")}
           </Text>
         </View>
       </View>
@@ -216,18 +217,29 @@ function ProfileRow({
   // Usage column: meters, a way back in after a lost login, or a note on how the agent signs in.
   let aside: ReactNode = null;
   if (note) aside = <Text {...visualOnly} style={{ ...t.body, color: c.foregroundMuted, opacity: dim }}>{note}</Text>;
-  else if (lost)
-    aside = (
+  else if (lost) {
+    const signIn = (
       <FluidButton
         theme={theme}
         label="Sign in again"
         accessibilityLabel={`Sign in to ${profile.label} again`}
         icon="LogIn"
-        variant="tertiary"
+        variant={compact ? "ghost" : "tertiary"}
         destructive={compact}
+        stretch={compact}
         onPress={onEdit}
       />
     );
+    // Compact: a full-width, danger-tinted bar under the account.
+    aside = compact ? (
+      <View>
+        <Tint color={c.statusDanger} opacity={0.14} radius={fluid.radius.item} />
+        {signIn}
+      </View>
+    ) : (
+      signIn
+    );
+  }
   else if (profile.enabled)
     aside = (
       <View {...visualOnly}>
@@ -258,6 +270,7 @@ function ProfileRow({
   // The button fills the row behind its content; the switch and sign-in button sit above it.
   return compact ? (
     <View
+      {...squircle}
       pointerEvents="box-none"
       style={{
         gap: 12,
